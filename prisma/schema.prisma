@@ -1,0 +1,282 @@
+generator client {
+   provider = "prisma-client-js"
+}
+
+datasource db {
+   provider = "postgresql"
+}
+
+enum Role {
+   ADMIN
+   GESTOR
+   ALMOXARIFE
+   REQUISITANTE
+}
+
+enum UserStatus {
+   ATIVO
+   INATIVO
+}
+
+enum UnitOfMeasure {
+   UN
+   KG
+   CX
+}
+
+enum RequestStatus {
+   PENDENTE
+   APROVADO
+   RECUSADO
+   ENTREGUE
+   CANCELADO
+}
+
+enum MovementType {
+   ENTRADA
+   SAIDA
+   TRANSFERENCIA_INTERNA
+   AJUSTE_INVENTARIO
+   RESERVA
+   BAIXA_FISICA
+}
+
+model User {
+   id           String     @id @default(cuid())
+   name         String     @db.VarChar(120)
+   email        String     @unique @db.VarChar(190)
+   passwordHash String     @db.VarChar(255)
+   role         Role       @default(REQUISITANTE)
+   status       UserStatus @default(ATIVO)
+   createdAt    DateTime   @default(now())
+   updatedAt    DateTime   @updatedAt
+
+   requestsCreated  MaterialRequest[] @relation("RequesterRequests")
+   requestsApproved MaterialRequest[] @relation("ApproverRequests")
+   auditLogs        AuditLog[]
+
+   @@index([role, status])
+   @@map("users")
+}
+
+model ProductCategory {
+   id          String   @id @default(cuid())
+   name        String   @unique @db.VarChar(80)
+   description String?  @db.VarChar(255)
+   isActive    Boolean  @default(true)
+   createdAt   DateTime @default(now())
+   updatedAt   DateTime @updatedAt
+
+   products Product[]
+
+   @@index([isActive])
+   @@map("product_categories")
+}
+
+model Product {
+   id          String        @id @default(cuid())
+   sku         String        @unique @db.VarChar(64)
+   barcode     String?       @unique @db.VarChar(64)
+   name        String        @db.VarChar(160)
+   description String?       @db.Text
+   categoryId  String
+   unit        UnitOfMeasure
+   minStock    Int           @default(0)
+   maxStock    Int?
+   costPrice   Decimal       @db.Decimal(14, 4)
+   isActive    Boolean       @default(true)
+   createdAt   DateTime      @default(now())
+   updatedAt   DateTime      @updatedAt
+
+   category     ProductCategory       @relation(fields: [categoryId], references: [id], onUpdate: Cascade)
+   batches      Batch[]
+   stocks       InventoryStock[]
+   requestItems MaterialRequestItem[]
+   auditLogs    AuditLog[]
+
+   @@index([name])
+   @@index([categoryId, isActive])
+   @@index([minStock])
+   @@map("products")
+}
+
+model WarehouseLocation {
+   id            String   @id @default(cuid())
+   buildingCode  String   @db.VarChar(12)
+   aisleCode     String   @db.VarChar(12)
+   rackCode      String   @db.VarChar(12)
+   levelCode     String   @db.VarChar(12)
+   addressCode   String   @unique @db.VarChar(64)
+   description   String?  @db.VarChar(255)
+   capacityLimit Decimal? @db.Decimal(14, 3)
+   capacityUsed  Decimal  @default(0) @db.Decimal(14, 3)
+   isBlocked     Boolean  @default(false)
+   createdAt     DateTime @default(now())
+   updatedAt     DateTime @updatedAt
+
+   stocks               InventoryStock[]
+   auditFromLog         AuditLog[]            @relation("AuditFromLocation")
+   auditToLog           AuditLog[]            @relation("AuditToLocation")
+   materialRequestItems MaterialRequestItem[]
+
+   @@unique([buildingCode, aisleCode, rackCode, levelCode], name: "warehouse_address_parts_key")
+   @@index([isBlocked])
+   @@map("warehouse_locations")
+}
+
+model Supplier {
+   id          String   @id @default(cuid())
+   name        String   @db.VarChar(140)
+   taxId       String?  @unique @db.VarChar(32)
+   contactName String?  @db.VarChar(120)
+   email       String?  @db.VarChar(190)
+   phone       String?  @db.VarChar(40)
+   isActive    Boolean  @default(true)
+   createdAt   DateTime @default(now())
+   updatedAt   DateTime @updatedAt
+
+   batches Batch[]
+
+   @@index([name])
+   @@index([isActive])
+   @@map("suppliers")
+}
+
+model Batch {
+   id             String    @id @default(cuid())
+   productId      String
+   supplierId     String?
+   batchNumber    String    @db.VarChar(64)
+   manufacturedAt DateTime? @db.Date
+   expiresAt      DateTime? @db.Date
+   receivedAt     DateTime  @default(now())
+   notes          String?   @db.Text
+
+   product   Product               @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+   supplier  Supplier?             @relation(fields: [supplierId], references: [id], onUpdate: Cascade)
+   stocks    InventoryStock[]
+   requests  MaterialRequestItem[]
+   auditLogs AuditLog[]
+
+   @@unique([productId, batchNumber], name: "product_batch_number_key")
+   @@index([expiresAt])
+   @@index([supplierId])
+   @@map("batches")
+}
+
+model InventoryStock {
+   id               String    @id @default(cuid())
+   productId        String
+   locationId       String
+   batchId          String
+   quantityOnHand   Int       @default(0)
+   quantityReserved Int       @default(0)
+   version          Int       @default(1)
+   lastMovementAt   DateTime?
+   createdAt        DateTime  @default(now())
+   updatedAt        DateTime  @updatedAt
+
+   product   Product           @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+   location  WarehouseLocation @relation(fields: [locationId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+   batch     Batch             @relation(fields: [batchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+   auditLogs AuditLog[]
+
+   @@unique([productId, locationId, batchId], name: "stock_balance_unique")
+   @@index([productId])
+   @@index([locationId])
+   @@index([batchId])
+   @@index([quantityOnHand, quantityReserved])
+   @@map("inventory_stocks")
+}
+
+model MaterialRequest {
+   id              String        @id @default(cuid())
+   code            String        @unique @db.VarChar(30)
+   requesterId     String
+   approverId      String?
+   status          RequestStatus @default(PENDENTE)
+   costCenter      String        @db.VarChar(60)
+   department      String?       @db.VarChar(80)
+   rejectionReason String?       @db.VarChar(255)
+   notes           String?       @db.Text
+   requestedAt     DateTime      @default(now())
+   decidedAt       DateTime?
+   deliveredAt     DateTime?
+   createdAt       DateTime      @default(now())
+   updatedAt       DateTime      @updatedAt
+
+   requester User                  @relation("RequesterRequests", fields: [requesterId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+   approver  User?                 @relation("ApproverRequests", fields: [approverId], references: [id], onUpdate: Cascade)
+   items     MaterialRequestItem[]
+   auditLogs AuditLog[]
+
+   @@index([status, requestedAt])
+   @@index([requesterId])
+   @@index([approverId])
+   @@index([costCenter])
+   @@map("material_requests")
+}
+
+model MaterialRequestItem {
+   id                  String        @id @default(cuid())
+   requestId           String
+   productId           String
+   allocatedBatchId    String?
+   allocatedLocationId String?
+   requestedQty        Int
+   approvedQty         Int?
+   deliveredQty        Int?
+   unit                UnitOfMeasure
+   justification       String?       @db.VarChar(255)
+   createdAt           DateTime      @default(now())
+   updatedAt           DateTime      @updatedAt
+
+   request           MaterialRequest    @relation(fields: [requestId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+   product           Product            @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+   allocatedBatch    Batch?             @relation(fields: [allocatedBatchId], references: [id], onUpdate: Cascade)
+   allocatedLocation WarehouseLocation? @relation(fields: [allocatedLocationId], references: [id], onUpdate: Cascade)
+   auditLogs         AuditLog[]
+
+   @@unique([requestId, productId], name: "request_product_once")
+   @@index([productId])
+   @@index([allocatedBatchId])
+   @@index([allocatedLocationId])
+   @@map("material_request_items")
+}
+
+model AuditLog {
+   id             String       @id @default(cuid())
+   movementType   MovementType
+   productId      String
+   stockId        String?
+   batchId        String?
+   fromLocationId String?
+   toLocationId   String?
+   requestId      String?
+   requestItemId  String?
+   performedById  String
+   quantity       Int
+   beforeOnHand   Int?
+   afterOnHand    Int?
+   beforeReserved Int?
+   afterReserved  Int?
+   reason         String?      @db.VarChar(255)
+   metadata       Json?
+   performedAt    DateTime     @default(now())
+
+   product      Product              @relation(fields: [productId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+   stock        InventoryStock?      @relation(fields: [stockId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+   batch        Batch?               @relation(fields: [batchId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+   fromLocation WarehouseLocation?   @relation("AuditFromLocation", fields: [fromLocationId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+   toLocation   WarehouseLocation?   @relation("AuditToLocation", fields: [toLocationId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+   request      MaterialRequest?     @relation(fields: [requestId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+   requestItem  MaterialRequestItem? @relation(fields: [requestItemId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+   performedBy  User                 @relation(fields: [performedById], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+   @@index([movementType, performedAt])
+   @@index([productId, performedAt])
+   @@index([batchId, performedAt])
+   @@index([requestId])
+   @@index([performedById])
+   @@map("audit_logs")
+}
