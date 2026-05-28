@@ -3,6 +3,24 @@ const AUTH_HEADERS = {
   'x-user-role': 'ALMOXARIFE',
 };
 
+const REQUEST_TIMEOUT_MS = 12000;
+
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Tempo limite excedido. Verifique se a API está ativa e tente novamente.');
+    }
+    throw new Error('Falha de conexao com a API. Verifique o servidor.');
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function handle<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const data = await response.json().catch(() => ({ message: 'Erro inesperado' }));
@@ -12,8 +30,85 @@ async function handle<T>(response: Response): Promise<T> {
 }
 
 export const api = {
+  async getMaterials(search?: string, activeOnly = false) {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (activeOnly) params.set('activeOnly', 'true');
+
+    const response = await fetchWithTimeout(`/api/v1/materials?${params.toString()}`, {
+      headers: AUTH_HEADERS,
+    });
+
+    return handle<{
+      data: Array<{
+        id: string;
+        sku: string;
+        barcode: string | null;
+        name: string;
+        description: string | null;
+        unit: 'UN' | 'KG' | 'CX';
+        minStock: number;
+        maxStock: number | null;
+        costPrice: number;
+        isActive: boolean;
+        category: { id: string; name: string };
+      }>;
+    }>(response);
+  },
+
+  async createMaterial(payload: {
+    sku: string;
+    barcode?: string | null;
+    name: string;
+    description?: string | null;
+    unit: 'UN' | 'KG' | 'CX';
+    minStock: number;
+    maxStock?: number | null;
+    costPrice: number;
+    categoryName: string;
+    isActive?: boolean;
+  }) {
+    const response = await fetchWithTimeout('/api/v1/materials', {
+      method: 'POST',
+      headers: { ...AUTH_HEADERS, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handle<any>(response);
+  },
+
+  async updateMaterial(
+    id: string,
+    payload: Partial<{
+      sku: string;
+      barcode: string | null;
+      name: string;
+      description: string | null;
+      unit: 'UN' | 'KG' | 'CX';
+      minStock: number;
+      maxStock: number | null;
+      costPrice: number;
+      categoryName: string;
+      isActive: boolean;
+    }>
+  ) {
+    const response = await fetchWithTimeout(`/api/v1/materials/${id}`, {
+      method: 'PATCH',
+      headers: { ...AUTH_HEADERS, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handle<any>(response);
+  },
+
+  async deleteMaterial(id: string) {
+    const response = await fetchWithTimeout(`/api/v1/materials/${id}`, {
+      method: 'DELETE',
+      headers: AUTH_HEADERS,
+    });
+    return handle<any>(response);
+  },
+
   async getDashboard() {
-    const response = await fetch('/api/v1/dashboard/summary', { headers: AUTH_HEADERS });
+    const response = await fetchWithTimeout('/api/v1/dashboard/summary', { headers: AUTH_HEADERS });
     return handle<{
       kpis: {
         totalItemsOnHand: number;
@@ -26,7 +121,7 @@ export const api = {
   },
 
   async getStocks(params: URLSearchParams) {
-    const response = await fetch(`/api/v1/inventory/stocks?${params.toString()}`, {
+    const response = await fetchWithTimeout(`/api/v1/inventory/stocks?${params.toString()}`, {
       headers: AUTH_HEADERS,
     });
     return handle<{
@@ -46,7 +141,7 @@ export const api = {
 
   async getRequests(status?: string) {
     const query = status ? `?status=${status}` : '';
-    const response = await fetch(`/api/v1/requests${query}`, { headers: AUTH_HEADERS });
+    const response = await fetchWithTimeout(`/api/v1/requests${query}`, { headers: AUTH_HEADERS });
     return handle<{ data: Array<any> }>(response);
   },
 
@@ -56,7 +151,7 @@ export const api = {
     notes?: string;
     items: Array<{ productId: string; requestedQty: number; unit: 'UN' | 'KG' | 'CX' }>;
   }) {
-    const response = await fetch('/api/v1/requests', {
+    const response = await fetchWithTimeout('/api/v1/requests', {
       method: 'POST',
       headers: { ...AUTH_HEADERS, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -65,7 +160,7 @@ export const api = {
   },
 
   async decideRequest(requestId: string, action: 'APROVAR' | 'RECUSAR', rejectionReason?: string) {
-    const response = await fetch(`/api/v1/requests/${requestId}/decision`, {
+    const response = await fetchWithTimeout(`/api/v1/requests/${requestId}/decision`, {
       method: 'PATCH',
       headers: { ...AUTH_HEADERS, 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, rejectionReason }),
@@ -74,7 +169,7 @@ export const api = {
   },
 
   async getTimeline(productId: string) {
-    const response = await fetch(`/api/v1/audit/timeline?productId=${productId}`, {
+    const response = await fetchWithTimeout(`/api/v1/audit/timeline?productId=${productId}`, {
       headers: AUTH_HEADERS,
     });
     return handle<{ data: Array<any> }>(response);

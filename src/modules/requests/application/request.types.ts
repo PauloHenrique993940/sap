@@ -1,3 +1,5 @@
+import { Role } from '@prisma/client';
+
 export type ReserveRequestItemInput = {
   requestId: string;
   requestItemId: string;
@@ -16,6 +18,7 @@ export type DeliverRequestItemInput = {
 
 export type CreateMaterialRequestInput = {
   requesterId: string;
+  requesterRole: Role;
   costCenter: string;
   department?: string;
   notes?: string;

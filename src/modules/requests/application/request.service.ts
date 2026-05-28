@@ -1,4 +1,4 @@
-import { MovementType, Prisma, RequestStatus, UnitOfMeasure } from '@prisma/client';
+import { MovementType, Prisma, RequestStatus, Role, UnitOfMeasure, UserStatus } from '@prisma/client';
 import { AppError } from '../../../shared/errors/app-error';
 import { prisma } from '../../../shared/prisma/client';
 import {
@@ -12,6 +12,55 @@ function assertPositiveQuantity(quantity: number) {
   if (!Number.isInteger(quantity) || quantity <= 0) {
     throw new AppError('Quantidade deve ser um inteiro positivo', 422);
   }
+}
+
+async function ensureMockUser(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  role: Role
+) {
+  await tx.user.upsert({
+    where: { id: userId },
+    update: { role, status: UserStatus.ATIVO },
+    create: {
+      id: userId,
+      name: `Usuario ${role}`,
+      email: `${userId}@mock.local`,
+      passwordHash: 'mock-auth',
+      role,
+      status: UserStatus.ATIVO,
+    },
+  });
+}
+
+async function resolveProductId(
+  tx: Prisma.TransactionClient,
+  productRef: string
+): Promise<string> {
+  const normalizedRef = productRef.trim();
+
+  const productById = await tx.product.findUnique({
+    where: { id: normalizedRef },
+    select: { id: true },
+  });
+
+  if (productById) {
+    return productById.id;
+  }
+
+  const productBySku = await tx.product.findUnique({
+    where: { sku: normalizedRef },
+    select: { id: true },
+  });
+
+  if (productBySku) {
+    return productBySku.id;
+  }
+
+  throw new AppError(
+    `Produto nao encontrado para referencia "${normalizedRef}". Informe um SKU ou ID valido.`,
+    422
+  );
 }
 
 async function isProductBelowMinStock(
@@ -50,6 +99,20 @@ export class RequestService {
     }
 
     return prisma.$transaction(async (tx) => {
+      await ensureMockUser(tx, input.requesterId, input.requesterRole);
+
+      const items = await Promise.all(
+        input.items.map(async (item) => {
+          const productId = await resolveProductId(tx, item.productId);
+          return {
+            productId,
+            requestedQty: item.requestedQty,
+            unit: item.unit as UnitOfMeasure,
+            justification: item.justification,
+          };
+        })
+      );
+
       const request = await tx.materialRequest.create({
         data: {
           code: `REQ-${Date.now()}`,
@@ -59,12 +122,7 @@ export class RequestService {
           notes: input.notes,
           items: {
             createMany: {
-              data: input.items.map((item) => ({
-                productId: item.productId,
-                requestedQty: item.requestedQty,
-                unit: item.unit as UnitOfMeasure,
-                justification: item.justification,
-              })),
+              data: items,
             },
           },
         },
@@ -74,13 +132,19 @@ export class RequestService {
       });
 
       return request;
+    }, {
+      maxWait: 10_000,
+      timeout: 20_000,
     });
   }
 
-  async listRequests(status?: RequestStatus) {
-    return prisma.materialRequest.findMany({
+  async listRequests(status?: RequestStatus | 'AGUARDANDO_RETIRADA') {
+    const resolvedStatus =
+      status === 'AGUARDANDO_RETIRADA' ? RequestStatus.ENTREGUE : status;
+
+    const requests = await prisma.materialRequest.findMany({
       where: {
-        ...(status ? { status } : {}),
+        ...(resolvedStatus ? { status: resolvedStatus } : {}),
       },
       orderBy: { requestedAt: 'desc' },
       include: {
@@ -99,6 +163,12 @@ export class RequestService {
         },
       },
     });
+
+    return requests.map((request) => ({
+      ...request,
+      displayStatus:
+        request.status === RequestStatus.ENTREGUE ? 'AGUARDANDO_RETIRADA' : request.status,
+    }));
   }
 
   async decideRequest(input: DecideMaterialRequestInput) {
@@ -134,6 +204,9 @@ export class RequestService {
       });
 
       return updated;
+    }, {
+      maxWait: 10_000,
+      timeout: 20_000,
     });
   }
 
@@ -261,6 +334,9 @@ export class RequestService {
         stockId: updatedStock.id,
         lowStock,
       };
+    }, {
+      maxWait: 10_000,
+      timeout: 20_000,
     });
   }
 
@@ -382,6 +458,9 @@ export class RequestService {
         quantityOnHand: updatedStock.quantityOnHand,
         lowStock,
       };
+    }, {
+      maxWait: 10_000,
+      timeout: 20_000,
     });
   }
 }

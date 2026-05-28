@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { RequestStatus } from '@prisma/client';
 import { prisma } from '../../../shared/prisma/client';
 
 export class DashboardController {
@@ -7,7 +8,7 @@ export class DashboardController {
     const next30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
     const last30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    const [stocks, pendingRequests, expiringBatches, deliveredRequests] = await Promise.all([
+    const [stocks, pendingRequests, expiringBatches, requestsLast30Days] = await Promise.all([
       prisma.inventoryStock.findMany({
         include: {
           product: { select: { id: true, minStock: true } },
@@ -24,13 +25,18 @@ export class DashboardController {
       }),
       prisma.materialRequest.findMany({
         where: {
-          status: 'ENTREGUE',
-          deliveredAt: { gte: last30 },
+          status: {
+            in: [RequestStatus.PENDENTE, RequestStatus.APROVADO, RequestStatus.ENTREGUE],
+          },
+          requestedAt: { gte: last30 },
         },
         select: {
           costCenter: true,
+          status: true,
           items: {
             select: {
+              requestedQty: true,
+              approvedQty: true,
               deliveredQty: true,
             },
           },
@@ -53,10 +59,16 @@ export class DashboardController {
     ).length;
 
     const consumptionByCostCenterMap = new Map<string, number>();
-    for (const req of deliveredRequests) {
-      const totalDelivered = req.items.reduce((sum, item) => sum + (item.deliveredQty ?? 0), 0);
+    for (const req of requestsLast30Days) {
+      const totalDemand = req.items.reduce((sum, item) => {
+        // Para representar consumo operacional no dashboard, usamos o melhor dado disponivel:
+        // entregue > aprovado > solicitado.
+        const quantity = item.deliveredQty ?? item.approvedQty ?? item.requestedQty;
+        return sum + quantity;
+      }, 0);
+
       const current = consumptionByCostCenterMap.get(req.costCenter) ?? 0;
-      consumptionByCostCenterMap.set(req.costCenter, current + totalDelivered);
+      consumptionByCostCenterMap.set(req.costCenter, current + totalDemand);
     }
 
     const consumptionByCostCenter = Array.from(consumptionByCostCenterMap.entries()).map(

@@ -32,6 +32,12 @@ Plataforma full-stack para gestao de almoxarifado inspirada em SAP MM/WM, com fo
   - `POST /api/v1/requests/:requestId/items/:itemId/deliver`
 - Auditoria: `GET /api/v1/audit/timeline?productId=...`
 
+## Swagger
+
+- UI interativa: `http://localhost:3333/api/docs`
+- OpenAPI JSON: `http://localhost:3333/api/docs.json`
+- Autenticacao mock nos endpoints protegidos: use os headers `x-user-id` e `x-user-role`.
+
 ## Autenticacao para ambiente de portfolio
 
 As rotas exigem cabecalhos:

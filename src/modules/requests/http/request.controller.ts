@@ -10,6 +10,7 @@ export class RequestController {
     const user = getRequestUser(req);
     const result = await requestService.createRequest({
       requesterId: user.id,
+      requesterRole: user.role,
       costCenter: req.body.costCenter,
       department: req.body.department,
       notes: req.body.notes,
@@ -20,7 +21,7 @@ export class RequestController {
   }
 
   async list(req: Request, res: Response) {
-    const statusRaw = req.query.status as RequestStatus | undefined;
+    const statusRaw = req.query.status as RequestStatus | 'AGUARDANDO_RETIRADA' | undefined;
     const result = await requestService.listRequests(statusRaw);
     res.status(200).json({ data: result });
   }
