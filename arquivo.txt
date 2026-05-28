@@ -1,0 +1,33 @@
+Atue como um Arquiteto de Software Sênior e Especialista em Logística (SAP MM/WM). Quero construir um projeto de portfólio Full-Stack de um sistema de gerenciamento de almoxarifado avançado inspirado nas melhores práticas de governança do SAP. 
+
+O objetivo do projeto é demonstrar robustez no back-end (consistência de dados, transações seguras) e uma experiência de usuário (UI/UX) moderna, limpa e responsiva no front-end.
+
+A stack tecnológica utilizada será:
+- Front-end: React, TypeScript, Tailwind CSS e gerenciamento de estado/rotas moderno.
+- Back-end: Node.js (TypeScript), banco de dados relacional PostgreSQL e Prisma ORM.
+
+Me ajude a estruturar este projeto em etapas, fornecendo a modelagem do banco de dados e as regras de negócio para as seguintes fases:
+
+---
+
+### FASE 1: MODELAGEM DO BANCO DE DATOS (Foco em Rastreabilidade)
+Preciso da estrutura das tabelas usando Prisma Schema para cobrir o fluxo essencial do SAP MM (Materiais) e WM (Armazém):
+1. Tabela de Usuários e Perfis (Roles: Operador, Almoxarife, Gestor).
+2. Tabela de Produtos/Materiais (SKU, Nome, Descrição, Unidade de Medida, Estoque Mínimo).
+3. Tabela de Endereçamento (Estrutura WM: Prédio, Rua, Prateleira, Nível).
+4. Tabela de Lotes (Para controle de validade e rastreabilidade).
+5. Tabela de Movimentações/Histórico (Para auditoria: Quem, Quando, O que, Quantidade, Tipo de Movimentação [Entrada por Compra, Saída por Requisição, Inventário de Ajuste]).
+
+### FASE 2: REGRAS DE NEGÓCIO E BACK-END (Core Logic)
+Gere a lógica das rotas e controladores utilizando Database Transactions para garantir que:
+- Uma saída de material nunca deixe o estoque negativo.
+- O mapeamento do endereço físico mude no banco se o produto for transferido de prateleira.
+- O sistema dispare um alerta (ou flag no banco) se o estoque atual for menor que o Estoque Mínimo configurado.
+
+### FASE 3: INTERFACE DO USUÁRIO (Front-end com React)
+Descreva como estruturar as telas principais com foco em UX moderna (Mobile-First):
+1. Dashboard do Gestor: Cards com total de itens, alertas de estoque crítico, e um gráfico simples de consumo por departamento.
+2. Tela de Requisição (Estilo Carrinho): Onde um usuário comum solicita materiais e o almoxarife pode "Aprovar" ou "Recusar".
+3. Timeline de Auditoria: Uma lista visual (estilo histórico de entregas) mostrando a rastreabilidade completa de um item específico.
+
+Comece me fornecendo o design inicial do banco de dados (Prisma Schema) e as principais restrições que devo aplicar para evitar falhas de consistência.
